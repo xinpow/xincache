@@ -1,5 +1,6 @@
 ### 导入Cache模块
 ``` from Cache import Cache ```
+
 ### 导入持久化缓存的DiskCache模块, 该模块持久化为保存数据在磁盘文件中
 ``` from core.DiskCache import DiskCache ```
 
