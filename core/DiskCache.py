@@ -1,6 +1,5 @@
-from typing import Union, List
 from .CacheEngineAbstract import CacheEngineAbstract
-import os, sys, pickle, hashlib, time, shutil
+import os, pickle, hashlib, shutil
 
 class DiskCache(CacheEngineAbstract):
     

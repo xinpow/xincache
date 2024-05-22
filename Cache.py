@@ -1,7 +1,7 @@
 from typing import Union, List
 from collections import OrderedDict
 from core.CacheEngineAbstract import CacheEngineAbstract
-import os, sys, pickle, hashlib, time, shutil, importlib, inspect
+import sys, time, inspect
 
 def singleton(cls):
     instances = {}
@@ -21,10 +21,7 @@ class Cache:
     
     def __init__(self, forever_engine: CacheEngineAbstract = None, max_size = None, ttl = None):
         if forever_engine:
-            if inspect.isclass(forever_engine):
-                self.__engine = forever_engine()
-            else:
-                self.__engine = forever_engine
+            self.__engine = forever_engine() if inspect.isclass(forever_engine) else forever_engine
         if max_size is not None and max_size > 0:
             self.setMaxMemoryUsage(max_size)
         if ttl is not None and ttl > 0:
