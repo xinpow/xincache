@@ -123,8 +123,7 @@ class Cache:
             self.__cache_data[key] = self.__engine.get(key, default)
         if key in self.__cache_data:
             if self.__cache_data[key]['ttl'] is not None and self.__cache_data[key]['ttl'] < int(time.time()):
-                del self.__cache_data[key]
-                self.deleteDiskCache(key)
+                self.delete(key)
             else:
                 return self.__cache_data[key]['data']
         return default
@@ -168,7 +167,7 @@ class Cache:
         self.get(key)
         if key in self.__cache_data:
             self.__cache_data[key]['ttl'] = (int(time.time()) + ttl) if ttl > 0 else None
-        self.setDiskCache(key)
+        self.set(key, self.__cache_data[key])
         return self
     
     def get_ttl(self, key: str):
