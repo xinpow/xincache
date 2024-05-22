@@ -1,7 +1,7 @@
-from abc import ABC, abstractmethod
 from typing import Union, List
 from collections import OrderedDict
-import os, sys, pickle, hashlib, time, shutil
+from core.CacheEngineAbstract import CacheEngineAbstract
+import os, sys, pickle, hashlib, time, shutil, importlib, inspect
 
 def singleton(cls):
     instances = {}
@@ -12,26 +12,25 @@ def singleton(cls):
     return getinstance
 
 @singleton
-class Cache(ABC):
+class Cache:
     
     __max_size    = None
-    __cache_dir   = None
     __default_ttl = None
     __cache_data  = OrderedDict()
+    __engine      = None
     
-    def setDiskCache(self, cache_dir = None):
-        """
-        开启持久化缓存
-        
-        Args:
-            cache_dir: 缓存目录，默认使用用户目录下的 .xin_cache/
-        """
-        self.__cache_dir = cache_dir if cache_dir is not None else (os.path.expanduser("~") + '/.xin_cache/')
-        if os.path.exists(self.__cache_dir) == False:
-            os.makedirs(self.__cache_dir, exist_ok=True)
-        return self
+    def __init__(self, forever_engine: CacheEngineAbstract = None, max_size = None, ttl = None):
+        if forever_engine:
+            if inspect.isclass(forever_engine):
+                self.__engine = forever_engine()
+            else:
+                self.__engine = forever_engine
+        if max_size is not None and max_size > 0:
+            self.setMaxMemoryUsage(max_size)
+        if ttl is not None and ttl > 0:
+            self.setDefaultTTL(ttl)
     
-    def setMaxSize(self, max_size):
+    def setMaxMemoryUsage(self, max_size):
         """
         设置最大缓存大小
         
@@ -51,68 +50,6 @@ class Cache(ABC):
         self.__default_ttl = ttl if ttl is not None else None
         return self
     
-    def setDiskCache(self, key: str):
-        """
-        写入持久化缓存
-        
-        Args:
-            key (str): 缓存键
-        """
-        if self.__cache_dir is not None:
-            filename = hashlib.md5(key.encode()).hexdigest()
-            filepath = self.__cache_dir.rstrip('/') + '/' + str(filename[6:8]) + '/' + filename
-            if os.path.exists(self.__cache_dir.rstrip('/') + '/' + str(filename[6:8])) == False:
-                os.makedirs(self.__cache_dir.rstrip('/') + '/' + str(filename[6:8]), exist_ok=True)
-            with open(filepath, 'wb') as f:
-                f.write(pickle.dumps(self.__cache_data[key]))
-                
-    def getDiskCache(self, key: str):
-        """
-        获取持久化缓存
-        
-        Args:
-            key (str): 缓存键
-            
-        Returns:
-            any: 缓存值
-        """
-        ret = None
-        if self.hasDiskCache(key):
-            filename = hashlib.md5(key.encode()).hexdigest()
-            filepath = self.__cache_dir.rstrip('/') + '/' + str(filename[6:8]) + '/' + filename
-            with open(filepath, 'rb') as f:
-                ret = pickle.loads(f.read())
-        return ret
-        
-    def hasDiskCache(self, key: str):
-        """
-        判断是否存在持久化缓存
-        
-        Args:
-            key (str): 缓存键
-            
-        Returns:
-            bool: 是否存在持久化缓存
-        """
-        if self.__cache_dir is not None:
-            filename = hashlib.md5(key.encode()).hexdigest()
-            filepath = self.__cache_dir.rstrip('/') + '/' + str(filename[6:8]) + '/' + filename
-            return os.path.exists(filepath)
-        return False
-    
-    def deleteDiskCache(self, key: str):
-        """
-        删除持久化缓存
-        
-        Args:
-            key (str): 缓存键
-        """
-        if self.__cache_dir is not None:
-            filename = hashlib.md5(key.encode()).hexdigest()
-            filepath = self.__cache_dir.rstrip('/') + '/' + str(filename[6:8]) + '/' + filename
-            if os.path.exists(filepath):
-                os.remove(filepath)
-    
     def set(self, key: str, value, ttl: int = 0, tags: Union[str, List[str]] = None):
         """
         设置缓存
@@ -131,9 +68,9 @@ class Cache(ABC):
             return None
         
         # 内存超限清理
-        if self.__max_size is not None and (sys.getsizeof(self.__cache_dir) / 1024 ** 2) >= self.__max_size:
+        if self.__max_size is not None and (sys.getsizeof(self.__cache_data) / 1024 ** 2) >= self.__max_size:
             clear_size = 0
-            over_size  = sys.getsizeof(self.__cache_dir) - self.__max_size - sys.getsizeof(value)
+            over_size  = sys.getsizeof(self.__cache_data) - self.__max_size - sys.getsizeof(value)
             for k in self.__cache_data:
                 clear_size += sys.getsizeof(self.__cache_data[k])
                 del self.__cache_data[k]
@@ -152,7 +89,8 @@ class Cache(ABC):
         }
         
         # 持久化缓存
-        self.setDiskCache(key)
+        if isinstance(self.__engine, CacheEngineAbstract):
+            self.__engine.set(key, self.__cache_data[key])
         
         return self.__cache_data[key]['data']
     
@@ -182,7 +120,7 @@ class Cache(ABC):
             any: 缓存值
         """
         if key not in self.__cache_data:
-            self.__cache_data[key] = self.getDiskCache(key)
+            self.__cache_data[key] = self.__engine.get(key, default)
         if key in self.__cache_data:
             if self.__cache_data[key]['ttl'] is not None and self.__cache_data[key]['ttl'] < int(time.time()):
                 del self.__cache_data[key]
@@ -200,7 +138,7 @@ class Cache(ABC):
         """
         if key in self.__cache_data:
             del self.__cache_data[key]
-            self.deleteDiskCache(key)
+            self.__engine.delete(key)
         return True
     
     def has(self, key: str):
@@ -253,17 +191,7 @@ class Cache(ABC):
         清空所有缓存
         """
         self.__cache_data.clear()
-        if self.__cache_dir is not None:
-            # 遍历文件夹中的所有文件和子文件夹
-            for filename in os.listdir(self.__cache_data):
-                file_path = os.path.join(self.__cache_data, filename)
-                try:
-                    if os.path.isfile(file_path) or os.path.islink(file_path):
-                        os.unlink(file_path)
-                    elif os.path.isdir(file_path):
-                        shutil.rmtree(file_path)
-                except Exception as e:
-                    print(f'{file_path} 缓存文件删除失败: {e}')
+        self.__engine.clear()
 
     def delete_expired(self):
         """
@@ -272,7 +200,24 @@ class Cache(ABC):
         for key in list(self.__cache_data.keys()):
             if self.__cache_data[key]['ttl'] is not None and self.__cache_data[key]['ttl'] < int(time.time()):
                 del self.__cache_data[key]
-                self.deleteDiskCache(key)
+                self.__engine.delete(key)
+        return self
+    
+    def set_tags(self, key: str, tags: Union[str, List[str]]):
+        """
+        设置缓存标签
+        
+        Args:
+            key (str)         : 缓存键
+            tags (str or list): 缓存标签
+            
+        Returns:
+            Cache: 缓存对象
+        """
+        self.get(key)
+        if key in self.__cache_data:
+            self.__cache_data[key]['tags'] = [tags] if isinstance(tags, str) else tags
+        self.__engine.set(key, self.__cache_data[key])
         return self
     
     def get_tags(self, tags: Union[str, List[str]]):
@@ -302,7 +247,7 @@ class Cache(ABC):
     
     def get_size(self):
         """
-        获取缓存大小
+        获取当前内存中缓存大小
         
         Returns:
             int: 缓存大小，单位为字节
@@ -311,7 +256,7 @@ class Cache(ABC):
     
     def get_count(self):
         """
-        获取缓存数量
+        获取当前内存中缓存数量
         
         Returns:
             int: 缓存数量
