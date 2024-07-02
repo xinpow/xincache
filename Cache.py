@@ -119,7 +119,7 @@ class Cache:
         if key not in self.__cache_data:
             self.__cache_data[key] = self.__engine.get(key, default)
         if key in self.__cache_data:
-            if self.__cache_data[key]['ttl'] is not None and self.__cache_data[key]['ttl'] < int(time.time()):
+            if 'ttl' in self.__cache_data[key] and self.__cache_data[key]['ttl'] is not None and self.__cache_data[key]['ttl'] < int(time.time()):
                 self.delete(key)
             else:
                 return self.__cache_data[key]['data']
