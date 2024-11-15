@@ -1,6 +1,6 @@
 from typing import Union, List
 from collections import OrderedDict
-from core.CacheEngineAbstract import CacheEngineAbstract
+from .core.CacheEngineAbstract import CacheEngineAbstract
 import sys, time, inspect
 
 def singleton(cls):
@@ -74,7 +74,7 @@ class Cache:
                 if clear_size >= over_size:
                     break
         
-        if ttl is None:
+        if ttl is None or ttl == 0:
             ttl = (int(time.time()) + self.__default_ttl) if (self.__default_ttl is not None and self.__default_ttl > 0) else None
         else:
             ttl = (int(time.time()) + ttl) if ttl > 0 else None
@@ -116,7 +116,7 @@ class Cache:
         Returns:
             any: 缓存值
         """
-        if key not in self.__cache_data:
+        if key not in self.__cache_data and self.__engine:
             self.__cache_data[key] = self.__engine.get(key, default)
         if key in self.__cache_data:
             if 'ttl' in self.__cache_data[key] and self.__cache_data[key]['ttl'] is not None and self.__cache_data[key]['ttl'] < int(time.time()):
@@ -134,8 +134,12 @@ class Cache:
         """
         if key in self.__cache_data:
             del self.__cache_data[key]
-            self.__engine.delete(key)
+            if self.__engine:
+                self.__engine.delete(key)
         return True
+    
+    def exists(self, key: str):
+        return self.has(key)
     
     def has(self, key: str):
         """
@@ -226,11 +230,29 @@ class Cache:
         Returns:
             list: 缓存列表
         """
+        tags = tags if type(tags) in [list, tuple] else [tags]
         ret = []
         for key in self.__cache_data:
             if tags is None or (isinstance(tags, list) and set(tags).intersection(set(self.__cache_data[key]['tags']))):
                 ret.append(self.__cache_data[key]['data'])
         return ret
+    
+    def remember(self, key, value, ttl: int = 0, tags: Union[str, List[str]] = None):
+        """
+        缓存记忆，如果缓存不存在则设置缓存
+        
+        Args:
+            key (str)         : 缓存键
+            value (any)       : 缓存值
+            ttl (int)         : 缓存过期时间，单位为秒, 0 表示永不过期
+            tags (str or list): 缓存标签
+            
+        Returns:
+            any: 缓存值
+        """
+        if not self.has(key):
+            self.set(key, value, ttl, tags)
+        return self.get(key)
     
     def get_keys(self):
         """
